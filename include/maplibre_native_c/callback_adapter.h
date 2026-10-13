@@ -28,9 +28,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "maplibre_native_c/base.h"     // IWYU pragma: export
-#include "maplibre_native_c/runtime.h"  // IWYU pragma: export
-#include "maplibre_native_c/style.h"    // IWYU pragma: export
+#include "base.h"     // IWYU pragma: export
+#include "runtime.h"  // IWYU pragma: export
+#include "style.h"    // IWYU pragma: export
 
 #ifdef __cplusplus
 extern "C" {

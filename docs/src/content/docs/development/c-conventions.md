@@ -10,26 +10,32 @@ sidebar:
 `include/` is the public C API boundary. Keep implementation-only helpers out of
 public headers. Consumers include `maplibre_native_c.h`; domain headers under
 `include/maplibre_native_c/` keep declarations maintainable and may be included
-directly when useful.
+directly when useful. Include sibling domain headers by bare name, such as
+`"base.h"`, so that the headers also compile from an Apple framework's
+`Headers/` directory.
 
 ```text
 include/                 # public C API headers
   maplibre_native_c.h    # public umbrella header
   maplibre_native_c/     # public domain headers
-    plugin.h             # layer plugin registration, outside the umbrella
+    callback_adapter.h   # host callback adaptation, not in maplibre_native_c.h
+    plugin.h             # layer plugin registration, not in maplibre_native_c.h
 src/
   c_api/                 # exported C definitions and C boundary validation
   <subsystem>/           # implementation semantics
 ```
 
-`plugin.h` is the one domain header that the umbrella leaves out. It includes
-MapLibre Native's `mln/plugin/plugin_api.h`, which the install copies next to
-this library's headers, and the shared library exports upstream's
-`mln_plugin_register_v1`. Upstream owns that contract and versions its structs
-independently of `mln_c_version()`, and a plugin is native code whose callbacks
-run on tile workers and the render thread for the process lifetime. Bindings
-expose the registration function for plugin integrations; plugin authoring uses
-the raw C contract.
+`maplibre_native_c.h` leaves out two domain headers. `callback_adapter.h` serves
+bindings whose hosts cannot run user code on native callback threads; see
+[Callback Adapter](#callback-adapter).
+
+`plugin.h` includes MapLibre Native's `mln/plugin/plugin_api.h`, which the
+install copies next to this library's headers, and the shared library exports
+upstream's `mln_plugin_register_v1`. Upstream owns that contract and versions
+its structs independently of `mln_c_version()`, and a plugin is native code
+whose callbacks run on tile workers and the render thread for the process
+lifetime. Bindings expose the registration function for plugin integrations;
+plugin authoring uses the raw C contract.
 
 Plugin integrations obtain the host's registration function through
 `mln_plugin_get_register_function_v1()` and pass it to their own registration
