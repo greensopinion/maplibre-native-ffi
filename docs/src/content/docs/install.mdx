@@ -305,7 +305,8 @@ An app's native code, built with CMake or ndk-build, links
 contains the library and the C headers as the Prefab module `maplibre-native-c`,
 and the app packages the AAR's `libmaplibre-native-c.so`. The library links
 libc++ statically and exports only C entry points, so the app can set any
-`ANDROID_STL`.
+`ANDROID_STL`. No release contains the Prefab module yet, so take the snapshot
+version from the Maven snapshot repository that [Kotlin](#kotlin) describes.
 
 ```kotlin title="build.gradle.kts"
 android {
@@ -315,7 +316,7 @@ android {
 }
 
 dependencies {
-  implementation("org.maplibre.nativeffi:maplibre-native-ffi-runtime-opengl-android:0.202608.0")
+  implementation("org.maplibre.nativeffi:maplibre-native-ffi-runtime-opengl-android:0.1.0-SNAPSHOT")
 }
 ```
 
