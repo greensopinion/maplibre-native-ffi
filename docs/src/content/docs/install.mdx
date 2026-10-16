@@ -299,6 +299,31 @@ android {
 }
 ```
 
+An app's native code, built with CMake or ndk-build, links
+`libmaplibre-native-c.so` from the same runtime AAR through
+[Prefab](https://developer.android.com/build/native-dependencies). The AAR
+contains the library and the C headers as the Prefab module `maplibre-native-c`,
+and the app packages the AAR's `libmaplibre-native-c.so`. The library links
+libc++ statically and exports only C entry points, so the app can set any
+`ANDROID_STL`.
+
+```kotlin title="build.gradle.kts"
+android {
+  buildFeatures {
+    prefab = true
+  }
+}
+
+dependencies {
+  implementation("org.maplibre.nativeffi:maplibre-native-ffi-runtime-opengl-android:0.202608.0")
+}
+```
+
+```cmake title="CMakeLists.txt"
+find_package(maplibre-native-c REQUIRED CONFIG)
+target_link_libraries(app PRIVATE maplibre-native-c::maplibre-native-c)
+```
+
 Android platform initialization is required once per process, before creating
 a runtime. Pass an `android.content.Context`; every binding exposes this call
 under its own name.

@@ -12,6 +12,7 @@ import org.jetbrains.kotlin.gradle.tasks.CInteropProcess
 import org.maplibre.nativeffi.gradle.AndroidTarget
 import org.maplibre.nativeffi.gradle.CargoPackage
 import org.maplibre.nativeffi.gradle.ExtractAarClassesJar
+import org.maplibre.nativeffi.gradle.GenerateAndroidPrefabPackage
 import org.maplibre.nativeffi.gradle.HostPlatform
 import org.maplibre.nativeffi.gradle.MaplibreNativeCArtifact
 import org.maplibre.nativeffi.gradle.MaplibreRuntimeBackend
@@ -19,6 +20,7 @@ import org.maplibre.nativeffi.gradle.MaplibreRuntimeConvention
 import org.maplibre.nativeffi.gradle.VerifyAndroidRuntimeBackend
 import org.maplibre.nativeffi.gradle.VerifyMaplibreRuntimeInstall
 import org.maplibre.nativeffi.gradle.canonicalizeKmpRootMetadata
+import org.maplibre.nativeffi.gradle.catalogVersionInt
 import org.maplibre.nativeffi.gradle.embedMaplibreLicenseBundle
 import org.maplibre.nativeffi.gradle.requiredEnvironmentVariable
 
@@ -334,6 +336,30 @@ fun configureAndroidRuntimePublication(backend: MaplibreRuntimeBackend) {
       }
       from(licenseDirectory) { into("META-INF/licenses/maplibre-native-c") }
       from(androidNdkNotice) { into("META-INF/licenses/android-ndk") }
+    }
+  }
+
+  // An app's native code links the library through Prefab, so the Prefab module
+  // takes each ABI's library from the directory that the AAR's jni/ entries come
+  // from, and the two copies are identical.
+  val packagedRuntimeLibraries = androidTargets.map { target ->
+    project(":bindings:kotlin")
+      .layout
+      .buildDirectory
+      .dir("generated/jniLibs/runtime/${backend.id}/${target.cargoTarget}")
+  }
+  val generatePrefabPackage =
+    tasks.register<GenerateAndroidPrefabPackage>("generateAndroidPrefabPackage") {
+      dependsOn(":bindings:kotlin:packageAndroidRuntimeLibraries")
+      headers.set(licenseInstall.resolve("include"))
+      libraries.from(packagedRuntimeLibraries)
+      minSdk.set(catalogVersionInt("android-minSdk"))
+      ndkMajorVersion.set(androidNdkVersion.substringBefore('.').toInt())
+      outputDirectory.set(layout.buildDirectory.dir("generated/prefab/androidMain"))
+    }
+  tasks.withType<Zip>().configureEach {
+    if (name == "bundleAndroidMainAar") {
+      from(generatePrefabPackage) { into("prefab") }
     }
   }
 

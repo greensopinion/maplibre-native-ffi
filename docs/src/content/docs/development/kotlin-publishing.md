@@ -130,6 +130,18 @@ AAR carries that one library per ABI and redistributes no `libc++_shared.so`.
 Runtime AARs include the native dependency notices and the Android NDK notice
 under `META-INF/licenses`.
 
+Each Android runtime AAR also contains a Prefab package under `prefab/`, so a
+host's native code links the library that the host packages. The package's
+module `maplibre-native-c` contains the C headers of the install and, per ABI, a
+copy of the `jni/` library. The module declares the STL `none`: Prefab rejects a
+shared library that declares `c++_static`, and this library exports no STL
+symbols. The Android Gradle plugin's `prefabPublishing` publishes only libraries
+that the module's own CMake build produces, and the Kotlin Multiplatform Android
+library plugin has no Prefab support, so a Gradle task writes the package and
+the task that builds the AAR adds it. The second copy of each library doubles
+the size of the native payload in the AAR; an APK still packages one library per
+ABI.
+
 Each Android runtime AAR also contains the JVM helper built from the pinned,
 patched `rustls-platform-verifier` checkout acquired by mise, its consumer R8
 rule, and the upstream licenses. The helper and Rust JNI descriptors use the
