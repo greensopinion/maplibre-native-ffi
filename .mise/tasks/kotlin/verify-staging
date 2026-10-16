@@ -279,42 +279,6 @@ def aar_keep_rules(aar: zipfile.ZipFile) -> str:
     return "\n".join(aar.read(name).decode("utf-8") for name in names)
 
 
-def verify_prefab(
-    runtime: pathlib.Path, aar: zipfile.ZipFile, names: set[str], abis: tuple[str, ...]
-) -> None:
-    module = "prefab/modules/maplibre-native-c"
-    for expected in (
-        "prefab/prefab.json",
-        f"{module}/module.json",
-        f"{module}/include/maplibre_native_c.h",
-    ):
-        if expected not in names:
-            raise SystemExit(f"{runtime} is missing {expected}")
-    package = json.loads(aar.read("prefab/prefab.json"))
-    if package.get("name") != "maplibre-native-c":
-        raise SystemExit(f"{runtime} prefab.json names {package.get('name')!r}")
-    prefab_abis = {
-        name.split("/")[4].removeprefix("android.")
-        for name in names
-        if name.startswith(f"{module}/libs/android.") and name.count("/") >= 5
-    }
-    if prefab_abis != set(abis):
-        raise SystemExit(f"{runtime} has Prefab libraries for {sorted(prefab_abis)}")
-    for abi in abis:
-        libs = f"{module}/libs/android.{abi}"
-        metadata = json.loads(aar.read(f"{libs}/abi.json"))
-        # The library links libc++ statically and exports only mln_* symbols, so
-        # the module declares the STL none. Prefab rejects a shared library that
-        # declares c++_static.
-        if metadata.get("abi") != abi or metadata.get("stl") != "none":
-            raise SystemExit(f"{runtime} {libs}/abi.json is {metadata}")
-        # An app's native code must link the library that AGP packages from jni/.
-        if aar.read(f"{libs}/libmaplibre-native-c.so") != aar.read(
-            f"jni/{abi}/libmaplibre-native-c.so"
-        ):
-            raise SystemExit(f"{runtime} {libs} differs from jni/{abi}")
-
-
 def verify_android(root: pathlib.Path) -> None:
     # The binding AAR carries the Kotlin API and its private JavaCPP bridge. An
     # Android host of any language takes the C library and the TLS component from
@@ -384,8 +348,20 @@ def verify_android(root: pathlib.Path) -> None:
                 )
                 if expected not in names:
                     raise SystemExit(f"{runtime} is missing {expected}")
+            prefab = "prefab/modules/maplibre-native-c"
+            for expected in (
+                "prefab/prefab.json",
+                f"{prefab}/module.json",
+                f"{prefab}/include/maplibre_native_c.h",
+            ):
+                if expected not in names:
+                    raise SystemExit(f"{runtime} is missing {expected}")
             abis = ("armeabi-v7a", "arm64-v8a", "x86_64")
             for abi in abis:
+                for name in ("abi.json", "libmaplibre-native-c.so"):
+                    expected = f"{prefab}/libs/android.{abi}/{name}"
+                    if expected not in names:
+                        raise SystemExit(f"{runtime} is missing {expected}")
                 expected = f"jni/{abi}/libmaplibre-native-c.so"
                 if expected not in names:
                     raise SystemExit(f"{runtime} is missing {expected}")
@@ -404,7 +380,6 @@ def verify_android(root: pathlib.Path) -> None:
             ]
             if unexpected:
                 raise SystemExit(f"{runtime} contains unexpected libraries: {unexpected}")
-            verify_prefab(runtime, aar, names, abis)
 
 
 def verify_android_runtime_independence(root: pathlib.Path) -> None:

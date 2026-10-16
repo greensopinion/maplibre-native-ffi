@@ -12,7 +12,6 @@ import org.jetbrains.kotlin.gradle.tasks.CInteropProcess
 import org.maplibre.nativeffi.gradle.AndroidTarget
 import org.maplibre.nativeffi.gradle.CargoPackage
 import org.maplibre.nativeffi.gradle.ExtractAarClassesJar
-import org.maplibre.nativeffi.gradle.GenerateAndroidPrefabPackage
 import org.maplibre.nativeffi.gradle.HostPlatform
 import org.maplibre.nativeffi.gradle.MaplibreNativeCArtifact
 import org.maplibre.nativeffi.gradle.MaplibreRuntimeBackend
@@ -310,7 +309,7 @@ fun configureAndroidRuntimePublication(backend: MaplibreRuntimeBackend) {
     verifyPublicationInputs.configure { dependsOn(verifyInput) }
   }
 
-  val licenseInstall = selectedInstalls.first()
+  val referenceInstall = selectedInstalls.first()
   // Resolve the NOTICE from the SDK Gradle selected, which is the same SDK whose
   // NDK supplies the statically linked libc++. Reading ANDROID_HOME directly
   // would pair the library with a notice from a different NDK whenever
@@ -322,7 +321,56 @@ fun configureAndroidRuntimePublication(backend: MaplibreRuntimeBackend) {
       .sdkComponents
       .sdkDirectory
       .map { it.file("ndk/$androidNdkVersion/NOTICE") }
-  val licenseDirectory = licenseInstall.resolve("share/maplibre-native-c/licenses")
+  val licenseDirectory = referenceInstall.resolve("share/maplibre-native-c/licenses")
+
+  // Prefab doesn't read jni/, so the Prefab module carries its own copy of each
+  // library, taken from the directories that the AAR's jni/ entries come from.
+  // The module declares the STL none because Prefab rejects a shared library that
+  // declares c++_static, and this library exports only mln_* symbols.
+  val prefabModule = "modules/maplibre-native-c"
+  val prefabAbis = androidTargets.map(AndroidTarget::ndkAbi)
+  val prefabMinSdk = catalogVersionInt("android-minSdk")
+  val prefabNdkMajorVersion = androidNdkVersion.substringBefore('.').toInt()
+  val runtimeLibraries =
+    project(":bindings:kotlin").layout.buildDirectory.dir("generated/jniLibs/runtime/${backend.id}")
+  val generatePrefabPackage =
+    tasks.register<Sync>("generateAndroidPrefabPackage") {
+      dependsOn(":bindings:kotlin:packageAndroidRuntimeLibraries")
+      inputs.property("minSdk", prefabMinSdk)
+      inputs.property("ndkMajorVersion", prefabNdkMajorVersion)
+      into(layout.buildDirectory.dir("generated/prefab/androidMain"))
+      from(referenceInstall.resolve("include")) { into("$prefabModule/include") }
+      androidTargets.forEach { target ->
+        from(runtimeLibraries.map { it.dir("${target.cargoTarget}/${target.ndkAbi}") }) {
+          include("libmaplibre-native-c.so")
+          into("$prefabModule/libs/android.${target.ndkAbi}")
+        }
+      }
+      doLast {
+        val module = destinationDir.resolve(prefabModule)
+        destinationDir
+          .resolve("prefab.json")
+          .writeText(
+            """{"schema_version": 2, "name": "maplibre-native-c", "dependencies": []}""" + "\n"
+          )
+        module
+          .resolve("module.json")
+          .writeText(
+            """{"export_libraries": [], "library_name": "libmaplibre-native-c", "android": {}}""" +
+              "\n"
+          )
+        prefabAbis.forEach { abi ->
+          module
+            .resolve("libs/android.$abi/abi.json")
+            .writeText(
+              """{"abi": "$abi", "api": $prefabMinSdk, "ndk": $prefabNdkMajorVersion, """ +
+                """"stl": "none", "static": false}""" +
+                "\n"
+            )
+        }
+      }
+    }
+
   tasks.withType<Zip>().configureEach {
     if (name == "bundleAndroidMainAar") {
       dependsOn(":bindings:kotlin:androidSdkPackages")
@@ -336,29 +384,6 @@ fun configureAndroidRuntimePublication(backend: MaplibreRuntimeBackend) {
       }
       from(licenseDirectory) { into("META-INF/licenses/maplibre-native-c") }
       from(androidNdkNotice) { into("META-INF/licenses/android-ndk") }
-    }
-  }
-
-  // An app's native code links the library through Prefab, so the Prefab module
-  // takes each ABI's library from the directory that the AAR's jni/ entries come
-  // from, and the two copies are identical.
-  val packagedRuntimeLibraries = androidTargets.map { target ->
-    project(":bindings:kotlin")
-      .layout
-      .buildDirectory
-      .dir("generated/jniLibs/runtime/${backend.id}/${target.cargoTarget}")
-  }
-  val generatePrefabPackage =
-    tasks.register<GenerateAndroidPrefabPackage>("generateAndroidPrefabPackage") {
-      dependsOn(":bindings:kotlin:packageAndroidRuntimeLibraries")
-      headers.set(licenseInstall.resolve("include"))
-      libraries.from(packagedRuntimeLibraries)
-      minSdk.set(catalogVersionInt("android-minSdk"))
-      ndkMajorVersion.set(androidNdkVersion.substringBefore('.').toInt())
-      outputDirectory.set(layout.buildDirectory.dir("generated/prefab/androidMain"))
-    }
-  tasks.withType<Zip>().configureEach {
-    if (name == "bundleAndroidMainAar") {
       from(generatePrefabPackage) { into("prefab") }
     }
   }
