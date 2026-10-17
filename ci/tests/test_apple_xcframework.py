@@ -28,6 +28,12 @@ def create_archive(path: pathlib.Path, preset: str, sha: str) -> None:
             f"{root}/share/maplibre-native-c/artifact.json",
             json.dumps({"gitSha": sha}).encode(),
         )
+        add_bytes(archive, f"{root}/share/maplibre-native-c/LICENSE", b"license")
+        add_bytes(
+            archive,
+            f"{root}/share/maplibre-native-c/licenses/maplibre-native.md",
+            b"notice",
+        )
         add_bytes(archive, f"{root}/include/maplibre_native_c.h", b"umbrella")
         add_bytes(archive, f"{root}/include/maplibre_native_c/base.h", b"base")
         add_bytes(archive, f"{root}/include/mln/plugin/plugin_api.h", b"plugin")
@@ -132,8 +138,8 @@ class AppleXcframeworkTest(unittest.TestCase):
         )
         self.assertEqual(xcodebuild.count("-framework"), len(PLATFORMS))
         self.assertEqual(
-            self.commands[-1][:4] + [self.commands[-1][-1]],
-            ["ditto", "-c", "-k", "--keepParent", str(output)],
+            self.commands[-1][:5] + [self.commands[-1][-1]],
+            ["ditto", "-c", "-k", "--norsrc", "--keepParent", str(output)],
         )
         self.assertEqual(output.name, "MapLibreNativeC.xcframework.zip")
 
@@ -157,6 +163,11 @@ class AppleXcframeworkTest(unittest.TestCase):
         self.assertIn('umbrella header "maplibre_native_c.h"', module_map)
         self.assertIn('header "maplibre_native_c/callback_adapter.h"', module_map)
         self.assertIn('exclude header "mln/plugin/plugin_api.h"', module_map)
+        self.assertEqual((framework / "Resources/LICENSE").read_bytes(), b"license")
+        self.assertEqual(
+            (framework / "Resources/licenses/maplibre-native.md").read_bytes(),
+            b"notice",
+        )
         info = plistlib.loads((framework / "Resources/Info.plist").read_bytes())
         self.assertEqual(info["LSMinimumSystemVersion"], "14.3")
         self.assertEqual(info["CFBundleSupportedPlatforms"], ["MacOSX"])
@@ -176,6 +187,10 @@ class AppleXcframeworkTest(unittest.TestCase):
                 (framework / "MapLibreNativeC").read_bytes(), preset.encode()
             )
             self.assertTrue((framework / "Headers/maplibre_native_c/base.h").is_file())
+            self.assertEqual((framework / "LICENSE").read_bytes(), b"license")
+            self.assertEqual(
+                (framework / "licenses/maplibre-native.md").read_bytes(), b"notice"
+            )
             info = plistlib.loads((framework / "Info.plist").read_bytes())
             self.assertEqual(info["MinimumOSVersion"], "15.5")
             self.assertEqual(info["CFBundleSupportedPlatforms"], [platform])

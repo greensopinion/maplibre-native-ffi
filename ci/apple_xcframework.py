@@ -143,7 +143,9 @@ def build_framework(
     """Wraps the prefix's dylib and headers in a framework under stage.
 
     The macOS framework uses the versioned layout, and the iOS frameworks use
-    the flat layout.
+    the flat layout. The framework's resources include the project's LICENSE
+    and the third-party notices in licenses/, which the binary distribution
+    must contain.
     """
     framework = stage / preset / f"{FRAMEWORK_NAME}.framework"
     macos = preset.startswith("macos-")
@@ -155,9 +157,13 @@ def build_framework(
     runner(["install_name_tool", "-id", f"@rpath/{install_name}", str(binary)])
     shutil.copytree(prefix / "include", contents / "Headers")
     (contents / "Modules/module.modulemap").write_text(MODULE_MAP, encoding="utf-8")
+    resources = contents / "Resources" if macos else contents
+    resources.mkdir(exist_ok=True)
+    licenses = prefix / "share/maplibre-native-c"
+    shutil.copy2(licenses / "LICENSE", resources / "LICENSE")
+    shutil.copytree(licenses / "licenses", resources / "licenses")
     plist = info_plist(preset, version, minimum)
     if macos:
-        (contents / "Resources").mkdir()
         (contents / "Resources/Info.plist").write_bytes(plist)
         (framework / "Versions/Current").symlink_to("A")
         for item in (FRAMEWORK_NAME, "Headers", "Modules", "Resources"):
@@ -207,8 +213,20 @@ def assemble(
         )
         output.unlink(missing_ok=True)
         # --keepParent puts the XCFramework at the zip's top level, and ditto
-        # keeps the macOS framework's symlinks.
-        runner(["ditto", "-c", "-k", "--keepParent", str(xcframework), str(output)])
+        # keeps the macOS framework's symlinks. --norsrc leaves out the
+        # AppleDouble files for extended attributes, which codesign rejects as
+        # unsealed contents of a framework.
+        runner(
+            [
+                "ditto",
+                "-c",
+                "-k",
+                "--norsrc",
+                "--keepParent",
+                str(xcframework),
+                str(output),
+            ]
+        )
     return output
 
 
