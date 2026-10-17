@@ -302,8 +302,7 @@ android {
 An app's native code, built with CMake or ndk-build, links the runtime AAR's
 library through [Prefab](https://developer.android.com/build/native-dependencies).
 The library links libc++ statically and exports only C entry points, so the app
-can use any `ANDROID_STL`. Until the next release, take the Prefab module from
-the snapshot channel that [Kotlin](#kotlin) describes.
+can use any `ANDROID_STL`.
 
 ```kotlin title="build.gradle.kts"
 android {
@@ -313,7 +312,7 @@ android {
 }
 
 dependencies {
-  implementation("org.maplibre.nativeffi:maplibre-native-ffi-runtime-opengl-android:0.1.0-SNAPSHOT")
+  implementation("org.maplibre.nativeffi:maplibre-native-ffi-runtime-opengl-android:0.202608.0")
 }
 ```
 

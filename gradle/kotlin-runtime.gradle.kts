@@ -322,6 +322,7 @@ fun configureAndroidRuntimePublication(backend: MaplibreRuntimeBackend) {
       .sdkDirectory
       .map { it.file("ndk/$androidNdkVersion/NOTICE") }
   val licenseDirectory = referenceInstall.resolve("share/maplibre-native-c/licenses")
+  val headerDirectory = referenceInstall.resolve("include")
 
   // Prefab doesn't read jni/, so the Prefab module carries its own copy of each
   // library, taken from the directories that the AAR's jni/ entries come from.
@@ -339,7 +340,7 @@ fun configureAndroidRuntimePublication(backend: MaplibreRuntimeBackend) {
       inputs.property("minSdk", prefabMinSdk)
       inputs.property("ndkMajorVersion", prefabNdkMajorVersion)
       into(layout.buildDirectory.dir("generated/prefab/androidMain"))
-      from(referenceInstall.resolve("include")) { into("$prefabModule/include") }
+      from(headerDirectory) { into("$prefabModule/include") }
       androidTargets.forEach { target ->
         from(runtimeLibraries.map { it.dir("${target.cargoTarget}/${target.ndkAbi}") }) {
           include("libmaplibre-native-c.so")
@@ -375,11 +376,14 @@ fun configureAndroidRuntimePublication(backend: MaplibreRuntimeBackend) {
     if (name == "bundleAndroidMainAar") {
       dependsOn(":bindings:kotlin:androidSdkPackages")
       // A missing directory would otherwise be skipped silently and ship an AAR
-      // with no native notices at all.
+      // with no native notices or Prefab headers.
       doFirst {
         check(licenseDirectory.isDirectory) {
           "Native license notices are missing at $licenseDirectory; the install " +
             "this AAR is assembled from predates the license bundle."
+        }
+        check(headerDirectory.isDirectory) {
+          "C headers are missing at $headerDirectory; the Prefab module needs them."
         }
       }
       from(licenseDirectory) { into("META-INF/licenses/maplibre-native-c") }
