@@ -172,6 +172,7 @@ class AppleXcframeworkTest(unittest.TestCase):
         self.assertEqual(info["LSMinimumSystemVersion"], "14.3")
         self.assertEqual(info["CFBundleSupportedPlatforms"], ["MacOSX"])
         self.assertEqual(info["CFBundleVersion"], "0.202608.0")
+        self.assertEqual(info["CFBundleInfoDictionaryVersion"], "6.0")
 
     def test_ios_frameworks_take_the_flat_layout(self) -> None:
         self.archives()

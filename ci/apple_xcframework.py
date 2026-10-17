@@ -122,6 +122,7 @@ def info_plist(preset: str, version: str, minimum: str) -> bytes:
         {
             "CFBundleExecutable": FRAMEWORK_NAME,
             "CFBundleIdentifier": f"org.maplibre.{FRAMEWORK_NAME}",
+            "CFBundleInfoDictionaryVersion": "6.0",
             "CFBundleName": FRAMEWORK_NAME,
             "CFBundlePackageType": "FMWK",
             "CFBundleShortVersionString": version,
