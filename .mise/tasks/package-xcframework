@@ -43,11 +43,9 @@ for slice in "${slices[@]}"; do
   # unsealed bundle content.
   tar -xzf "$archive" -C "$work"
   framework="$work/maplibre-native-c-${preset}/Frameworks/MaplibreNativeC.framework"
-  # Xcode copies a binary framework's dSYM into an app archive only when the
-  # XCFramework contains it. Without the dSYM, Xcode can't upload the
-  # framework's symbols to App Store Connect, and App Store Connect can't
-  # symbolicate the framework's frames in crash reports. The binary has no
-  # debug information, so the dSYM contains only the binary's symbol table.
+  # Release builds have no debug information, so dsymutil warns that it found
+  # none and writes a dSYM with only the symbol table. That's still enough for
+  # crash reports to show the framework's function names.
   xcrun dsymutil "$framework/MaplibreNativeC" -o "$framework.dSYM"
   frameworks+=(-framework "$framework" -debug-symbols "$framework.dSYM")
 
