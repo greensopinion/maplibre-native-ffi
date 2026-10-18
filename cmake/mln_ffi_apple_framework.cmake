@@ -8,18 +8,6 @@ include("${CMAKE_CURRENT_LIST_DIR}/platform/apple.cmake")
 # package into MaplibreNativeC.xcframework.
 set(MLN_FFI_APPLE_FRAMEWORK_NAME MaplibreNativeC)
 
-# Whether the framework targets iOS or tvOS rather than macOS or Mac Catalyst.
-# CMake gives these frameworks a flat bundle, and the macOS family a versioned
-# one.
-function(mln_ffi_apple_framework_embedded out_var)
-  mln_ffi_apple_is_maccatalyst(maccatalyst)
-  if(CMAKE_SYSTEM_NAME MATCHES "^(iOS|tvOS)$" AND NOT maccatalyst)
-    set(${out_var} TRUE PARENT_SCOPE)
-  else()
-    set(${out_var} FALSE PARENT_SCOPE)
-  endif()
-endfunction()
-
 function(mln_ffi_add_c_api_framework target implementation_target)
   add_library(${target} SHARED)
   mln_ffi_configure_shared_c_api_wrapper(${target} ${implementation_target})
@@ -27,7 +15,7 @@ function(mln_ffi_add_c_api_framework target implementation_target)
   # App Store processing reads the supported platform from every embedded
   # framework, and MinimumOSVersion from an iOS or tvOS one. The version is the
   # project's until the publish step relabels it with the release version.
-  mln_ffi_apple_framework_embedded(embedded)
+  mln_ffi_apple_is_embedded(embedded)
   mln_ffi_apple_is_simulator(simulator)
   if(NOT embedded)
     set(MLN_FFI_APPLE_FRAMEWORK_PLATFORM MacOSX)
@@ -76,9 +64,12 @@ function(mln_ffi_install_c_api_framework target framework_target component)
   install(
     TARGETS ${framework_target}
     FRAMEWORK DESTINATION Frameworks COMPONENT "${component}")
+  mln_ffi_install_apple_dsym(${framework_target} Frameworks "${component}")
 
+  # CMake gives an iOS or tvOS framework a flat bundle, and a macOS or Mac
+  # Catalyst one a versioned bundle.
   set(framework "Frameworks/${MLN_FFI_APPLE_FRAMEWORK_NAME}.framework")
-  mln_ffi_apple_framework_embedded(embedded)
+  mln_ffi_apple_is_embedded(embedded)
   if(embedded)
     set(content "${framework}")
     set(resources "${content}")

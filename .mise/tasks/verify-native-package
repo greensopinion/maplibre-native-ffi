@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# [MISE] description="Reject private exports, build-host paths, and vendored loaders or headers in a native package."
+# [MISE] description="Reject private exports, build-host paths, vendored loaders or headers, and unstripped Apple libraries in a native package."
 # [MISE] shell="python"
 # USAGE arg "<preset>" help="Native CMake preset"
 
@@ -22,6 +22,11 @@ implementation. An artifact carrying its own copy redistributes a snapshot that
 can disagree with the implementation a host actually loads, so the package holds
 the C API's headers and nothing else. MapLibre Native's plugin header is the one
 addition: it is the contract of a symbol the library itself exports.
+
+An Apple package strips the core's internal symbols from each library and keeps
+them in a dSYM beside it, where debuggers and crash reports look them up by
+UUID. A library that keeps its local symbols costs every app that embeds it the
+space, and one without a matching dSYM loses those names.
 """
 
 from __future__ import annotations
@@ -61,6 +66,7 @@ PE_MAGIC = b"MZ"
 MACHO_NAME = re.compile(r"^\s*name (?P<name>.+) \(offset \d+\)$")
 MACHO_PATH = re.compile(r"^\s*path (?P<path>.+) \(offset \d+\)$")
 MACHO_COMMAND = re.compile(r"^\s*cmd (?P<command>LC_\w+)$")
+MACHO_UUID = re.compile(r"^\s*uuid (?P<uuid>[0-9A-F-]+)$")
 ELF_ENTRY = re.compile(r"^\s*0x[0-9a-f]+\s+\((?P<tag>\w+)\)\s+.*\[(?P<value>[^\]]*)\]")
 PE_EXPORT = re.compile(r"^\s*Name: (?P<name>\S+)$")
 
@@ -103,6 +109,8 @@ PRIVATE_EXPORT = "exports a private symbol"
 LINKED_LOADER = "links a graphics loader"
 VENDORED_LOADER = "carries a library that is not the C API"
 VENDORED_HEADER = "carries a header that is not the C API's"
+UNSTRIPPED = "keeps local symbols"
+MISSING_DSYM = "has no matching dSYM"
 REMEDIES = {
     BUILD_HOST_PATH: (
         "The package only loads on hosts that reproduce the paths above. "
@@ -129,6 +137,16 @@ REMEDIES = {
         "with it, so the package carries the C API's headers and nothing else. "
         "Install a local stand-in through the loader component instead, which "
         "stays out of the artifact."
+    ),
+    UNSTRIPPED: (
+        "An Apple package keeps a library's local symbols in its dSYM alone. "
+        "CPack strips the macOS and Mac Catalyst libraries, and "
+        "mln_ffi_install_apple_dsym strips the iOS and tvOS ones."
+    ),
+    MISSING_DSYM: (
+        "Debuggers and crash reports find an Apple library's local symbols in "
+        "the dSYM beside it, by UUID. mln_ffi_install_apple_dsym writes one "
+        "from the library the build linked."
     ),
 }
 
@@ -215,6 +233,39 @@ def pe_problems(binary: pathlib.Path) -> list[tuple[str, str]]:
     return [(PRIVATE_EXPORT, name) for name in exports if not name.startswith("mln_")]
 
 
+def dsym_problems(binary: pathlib.Path, root: pathlib.Path) -> list[tuple[str, str]]:
+    """Local symbols left in an Apple library, and its dSYM's absence or UUID."""
+    problems = []
+    symbols = run(["nm", "-m", "--defined-only", str(binary)]).splitlines()
+    local = sum(" non-external " in line for line in symbols)
+    if local:
+        problems.append((UNSTRIPPED, f"{local} local symbols"))
+
+    # A framework's dSYM sits beside the bundle, and a bare library's beside
+    # the library.
+    bundle = next(
+        (path for path in binary.parents if path.suffix == ".framework"), binary
+    )
+    dsym = bundle.with_name(f"{bundle.name}.dSYM")
+    symbol_file = dsym / "Contents/Resources/DWARF" / binary.name
+    if not symbol_file.is_file():
+        problems.append((MISSING_DSYM, f"no {symbol_file.relative_to(root)}"))
+    elif macho_uuids(symbol_file) != macho_uuids(binary):
+        problems.append(
+            (MISSING_DSYM, f"{dsym.relative_to(root)} describes another build")
+        )
+    return problems
+
+
+def macho_uuids(binary: pathlib.Path) -> list[str]:
+    """The UUID of each slice of a Mach-O file."""
+    return [
+        match.group("uuid")
+        for line in run(["otool", "-l", str(binary)]).splitlines()
+        if (match := MACHO_UUID.match(line))
+    ]
+
+
 def vendored_header(relative: pathlib.PurePath) -> bool:
     """Whether a packaged path is a header the C API does not own."""
     parts = relative.parts
@@ -280,9 +331,12 @@ def main() -> int:
         with tarfile.open(archive) as tar:
             tar.extractall(directory, filter="data")
         for binary in sorted(pathlib.Path(directory).rglob("*")):
-            if not binary.is_file():
-                continue
             relative = binary.relative_to(directory)
+            # A dSYM's symbol file goes through dsym_problems with its library.
+            if not binary.is_file() or any(
+                part.endswith(".dSYM") for part in relative.parts
+            ):
+                continue
             if vendored_header(relative):
                 problems.append((binary.name, VENDORED_HEADER, str(relative)))
                 continue
@@ -300,6 +354,13 @@ def main() -> int:
                 (binary.name, kind, detail)
                 for kind, detail in binary_problems(binary, image, links_loader)
             )
+            # A macOS framework links its binary from the top of the bundle,
+            # and the binary itself is the one to check.
+            if image == "macho" and not binary.is_symlink():
+                problems.extend(
+                    (binary.name, kind, detail)
+                    for kind, detail in dsym_problems(binary, pathlib.Path(directory))
+                )
 
     if not problems:
         return 0

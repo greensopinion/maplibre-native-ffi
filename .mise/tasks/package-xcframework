@@ -43,10 +43,6 @@ for slice in "${slices[@]}"; do
   # unsealed bundle content.
   tar -xzf "$archive" -C "$work"
   framework="$work/maplibre-native-c-${preset}/Frameworks/MaplibreNativeC.framework"
-  # Release builds have no debug information, so dsymutil warns that it found
-  # none and writes a dSYM with only the symbol table. That's still enough for
-  # crash reports to show the framework's function names.
-  xcrun dsymutil "$framework/MaplibreNativeC" -o "$framework.dSYM"
   frameworks+=(-framework "$framework" -debug-symbols "$framework.dSYM")
 
   minimum="$(vtool -show-build "$framework/MaplibreNativeC" | awk '$1 == "minos" { print $2 }')"

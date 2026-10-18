@@ -188,6 +188,55 @@ function(mln_ffi_install_c_api_shared_target target)
     ARCHIVE
       DESTINATION "${CMAKE_INSTALL_LIBDIR}"
       COMPONENT "${MLN_FFI_NATIVE_COMPONENT}")
+  mln_ffi_install_apple_dsym(${target} "${CMAKE_INSTALL_LIBDIR}"
+                             "${MLN_FFI_NATIVE_COMPONENT}")
+endfunction()
+
+# An Apple package strips the core's internal symbols from each binary and keeps
+# them in a dSYM beside it, so debuggers and crash reports still name those
+# functions. Release builds have no debug information, so the dSYM holds only
+# the symbol table, and dsymutil would warn that it found nothing more. The dSYM
+# comes from the build tree's binary, which a stripping install leaves alone.
+#
+# dsymutil also writes an empty relocation list that records the build tree's
+# path, so the install removes it. CMake strips an installed binary for macOS
+# and Mac Catalyst, but not for iOS or tvOS, so the install strips those itself.
+function(mln_ffi_install_apple_dsym target destination component)
+  if(NOT APPLE)
+    return()
+  endif()
+  find_program(MLN_FFI_DSYMUTIL NAMES dsymutil llvm-dsymutil REQUIRED)
+
+  # An iOS or tvOS framework keeps its binary at the root of the bundle.
+  get_target_property(framework ${target} FRAMEWORK)
+  if(framework)
+    set(bundle "${destination}/$<TARGET_BUNDLE_DIR_NAME:${target}>")
+    set(binary "${bundle}/$<TARGET_FILE_NAME:${target}>")
+  else()
+    set(bundle "${destination}/$<TARGET_FILE_NAME:${target}>")
+    set(binary "${bundle}")
+  endif()
+  set(prefix "\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}")
+  set(dsym "${prefix}/${bundle}.dSYM")
+
+  set(code
+      "execute_process(
+        COMMAND \"${MLN_FFI_DSYMUTIL}\" --quiet \"$<TARGET_FILE:${target}>\"
+          -o \"${dsym}\"
+        COMMAND_ERROR_IS_FATAL ANY)
+      file(REMOVE_RECURSE \"${dsym}/Contents/Resources/Relocations\")")
+  mln_ffi_apple_is_embedded(embedded)
+  if(embedded)
+    string(
+      APPEND code
+      "
+      if(CMAKE_INSTALL_DO_STRIP)
+        execute_process(
+          COMMAND \"${CMAKE_STRIP}\" -x \"${prefix}/${binary}\"
+          COMMAND_ERROR_IS_FATAL ANY)
+      endif()")
+  endif()
+  install(CODE "${code}" COMPONENT "${component}")
 endfunction()
 
 function(mln_ffi_install_c_api_library target)
